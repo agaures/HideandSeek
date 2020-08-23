@@ -23,7 +23,7 @@ str classNames[12] =
 	"Tactician"
 };
 str abilityData[NUM_POWERUPS][2] = {
-    { "BansheeFirstCooldown", "Energy Field"},
+    { "BansheeFirstCooldown", "Life Support"},
     { "BlazerFirstCooldown", "Dash"},
     { "GuardianFirstCooldown", "Smoke bomb"},
     { "IllusionistFirstCooldown", "Disguise" },
@@ -35,7 +35,7 @@ str abilityData[NUM_POWERUPS][2] = {
     { "TerminatorFirstCooldown", "Laser Shot" },
     { "PolymorphistFirstCooldown", "Lostsoul" },
     { "TacticianFirstCooldown", "Tripmines" },
-    { "BansheeSecondCooldown", "Life Support" },
+    { "BansheeSecondCooldown", "Energy Field" },
     { "BlazerSecondCooldown", "Recall" },
     { "GuardianSecondCooldown", "Invulnerability" },
     { "IllusionistSecondCooldown", "Shrink" },
@@ -57,11 +57,31 @@ function str getItemName(int abilityNum)
 }
 script "giveCooldownForSeconds"(int itemName, int seconds)
 {
+	GiveInventory(itemName, seconds);
 	for (int x = 1; x <= seconds; x++)
 	{
 		Delay(35);
 		TakeInventory(itemName, 1);
 	}
+}
+
+script "bansheeHeal" (int itemName)
+{
+	while(CheckInventory("BansheeFirstActive"))
+	{
+		if(CheckInventory("HealingEnergy"))
+		{
+			PlaySound(0, "Banshee/Abilities/LifeSupport", 6);
+			TakeInventory("HealingEnergy", 1);
+			HealThing(1);				
+		}
+		else
+			break;
+		if(GetActorProperty(0, APROP_Health) == 100)
+			break;
+		Delay(12);
+	}
+	ACS_NamedExecuteAlways("giveCooldownForSeconds", 0, itemName, GetAmmoCapacity(itemName));
 }
 
 script "cooldownActive" (void) ClientSide
@@ -148,7 +168,7 @@ script "endDual" (void) NET
 
 script "hudBlood" (void) clientside
 {
-	For (int x = 5; x >= 0; x--)
+	For (int x = 3; x >= 0; x--)
 	{
 		HudMessage(s:"Bloodlust lasts for ", d:x, s:" more seconds"; HUDMSG_FADEOUT, 7, -1, 1.5, 0.65, 0.5, 0.5);
 		Delay(35);
@@ -159,8 +179,9 @@ script "hudBlood" (void) clientside
 script "endBlood" (void) NET
 {
 	TakeInventory("Bloodlust", 1);
-	PlaySound(0, "Berseker/Abilities/LoseBlood");
-	ACS_NamedExecute("giveCooldownForSeconds", 0, "BerserkerFirstCooldown", 60);
+	//PlaySound(0, "Berseker/Abilities/LoseBlood");
+	
+	ACS_NamedExecute("giveCooldownForSeconds", 0, "BerserkerFirstCooldown", 25);
 	terminate;
 }
 
@@ -168,7 +189,6 @@ script "hudTrip" (void) clientside
 {
 	HudMessage(s:"You can only have 5 trip mines at a time"; HUDMSG_FADEOUT, 7, -1, 1.5, 0.65, 3.5, 3.0);
 }
-
 
 script "HNS_PrimaryAbility" (int hTaunt, int sTaunt) NET {
 	int classNum = PlayerClass(PlayerNumber());
@@ -181,15 +201,19 @@ script "HNS_PrimaryAbility" (int hTaunt, int sTaunt) NET {
     switch (classNum) {
 	//Banshee Dash Ability
     case CLASS_BANSHEE:
-		Delay(35);
-		GiveInventory("EnergyField", 1);
-		PlaySound(0, "Banshee/Abilities/EnergyField", 6);
-		ACS_NamedExecute("giveActiveforSeconds", 0, 5);
-		Delay(35 * 5);
-		TakeInventory("EnergyField", 1);
-		TakeInventory("BansheeFirstActive", 1);
-		ACS_NamedExecute("giveCooldownForSeconds", 0, "BansheeFirstCooldown", 15);
-        break;
+		if(GetActorProperty(0, APROP_Health) == 100)
+		{
+			HudMessage(s:"You have 100 health"; HUDMSG_FADEOUT, 7, -1, 1.5, 0.65, 3.5, 3.0);
+			break;
+		}
+		if(!CheckInventory("BansheeFirstActive"))
+		{
+			ACS_NamedExecute("bansheeHeal", 0, itemName);
+			GiveInventory("BansheeFirstActive", 1);
+		}
+		else
+			TakeInventory("BansheeFirstActive", 1);
+		break;
 	//Blazer Dash Ability
     
 	case CLASS_BLAZER:
@@ -232,7 +256,7 @@ script "HNS_PrimaryAbility" (int hTaunt, int sTaunt) NET {
 		PlaySound(0, "Illusionist/Abilities/Morph");
 		ACS_NamedExecute("hudMorph", 0, StrParam(s:classNames[seekerClass], s:"Morph"));
 		ACS_NamedExecute("giveActiveforSeconds", 0, 3, classNum, "First");
-		ACS_NamedExecute("giveCooldownForSeconds", 0, "IllusionistFirstCooldown", 20);
+		ACS_NamedExecute("giveCooldownForSeconds", 0, itemName, GetAmmoCapacity(itemName));
 		break;
     
 	//Rocketeer Rocket Barrage Ability
@@ -304,12 +328,18 @@ script "HNS_PrimaryAbility" (int hTaunt, int sTaunt) NET {
 	
 	//logic done
 	case CLASS_TACTICIAN:
-		if (ThingCount("Mine", PlayerNumber()+20) > 5)
+		int MineId = PlayerNumber() + 50;
+		int angle = GetActorAngle(0);
+		int x = GetActorX(0) + FixedMul(cos(angle), 64.0);
+		int y = GetActorY(0) + FixedMul(sin(angle), 64.0);
+		int z = GetActorZ(0);
+		if (ThingCount("Mine", PlayerNumber()+20) >= 5)
 		{
 			PlaySound(0, "Tactician/Abilities/Minefail", 6);
 			ACS_NamedExecute("hudTrip", 0);
 		}
-		SpawnProjectile(0, "Mine", GetActorAngle(0) >> 8, 200, 0,0, PlayerNumber()+20);
+		Spawn("Mine", x, y, z, MineId, 0);
+		PlaySound(0, "MINE001", 6);
 		ACS_NamedExecute("giveCooldownForSeconds", 0, "TacticianFirstCooldown", 3);
 		break;
 		
@@ -317,8 +347,10 @@ script "HNS_PrimaryAbility" (int hTaunt, int sTaunt) NET {
         PrintBold(s: "Class not defined");
         break;
     }
+	
+	//this probably should be cleaned up
 	//Excluding the blazer because it has it's own cooldown system
-	if (PlayerClass(PlayerNumber()) != 1)
+	if (PlayerClass(PlayerNumber()) != CLASS_BANSHEE && PlayerClass(PlayerNumber()) != CLASS_BLAZER && PlayerClass(PlayerNumber()) != CLASS_BERSERKER)
 	{
 		GiveInventory(itemName, 999);
 		ACS_NamedExecuteAlways("giveCooldownForSeconds", 0, itemName, GetAmmoCapacity(itemName));
@@ -421,11 +453,23 @@ script "HNS_SecondAbility" (int hTaunt, int sTaunt) NET {
 	case CLASS_POLYMORPHIST:
 		break;
 	case CLASS_TACTICIAN:
-		break;
-		
-	default:
-        PrintBold(s: "Class not defined");
-        break;
+		int sentryId = PlayerNumber() + 50;
+		int angle = GetActorAngle(0);
+		int x = GetActorX(0) + FixedMul(cos(angle), 64.0);
+		int y = GetActorY(0) + FixedMul(sin(angle), 64.0);
+		int z = GetActorZ(0);
+			while (ThingCount("SentryGun", sentryId) == 1)
+			{
+				PlaySound(0, "Sentry/Active", 6);
+				ACS_NamedExecute("hudsentry", 0);
+				terminate;
+			}
+			while (ThingCount("SentryGun", sentryId) < 1)
+			{
+				Spawn("SentryGun", x, y, z, sentryId, 0);
+				ACS_NamedExecute("sentryLife",0, sentryId);
+				break;
+			}
 	}
 	//Excluding the guardian because it has it's own cooldown system
 	if(PlayerClass(PlayerNumber()) != 2)
@@ -595,6 +639,25 @@ script "endFreeze" (void) Net
 	ACS_NamedExecute("removeCooldownForSeconds", 0, 15);
 }
 
+script "hudsentry" (void) clientside
+{
+	HudMessage(s:"you can only have 1 sentry at a time"; HUDMSG_FADEOUT, 7, -1, 1.5, 0.65, 3.5, 3.0);
+}
+
+script "sentryLife" (int sentryId) Net
+{
+	For (int x = 20; x >= 0; x--)
+	{
+		Delay(35);
+		if (x != 0)
+		{
+			HudMessage(d: x, s:" until sentry expires."; HUDMSG_FADEOUT, 7, -1, 1.5, 0.65, 3.5, 3.0);
+		}
+	}
+	HudMessage(s:"Sentry Destroyed!"; HUDMSG_FADEOUT, 7, -1, 1.5, 0.65, 3.5, 3.0);
+	SetActorState(sentryId, "Death", true);
+	ACS_NamedExecute("giveCooldownForSeconds", 0, "TacticianSecondCooldown", 60);
+}
 
 script "Client_Powerup_HudMessage" ENTER CLIENTSIDE {
     while (true) {
